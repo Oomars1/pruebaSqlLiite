@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Usuarios</title>
+</head>
+<body>
+    <h1>Gestión de Usuarios</h1>
+    
+    <h2>Obtener todos los usuarios</h2>
+    <button onclick="getUsuarios()">Listar Usuarios</button>
+    <pre id="usuarios"></pre>
+
+    <h2>Obtener usuario por ID</h2>
+    <form id="getUserForm">
+        <label for="userId">ID del usuario:</label>
+        <input type="number" id="userId" name="userId" required>
+        <button type="submit">Obtener Usuario</button>
+    </form>
+    <pre id="usuario"></pre>
+
+    <h2>Crear un nuevo usuario</h2>
+    <form id="createUserForm">
+        <label for="nombre">Nombre:</label>
+        <input type="text" id="nombre" name="nombre" required>
+        <label for="edad">Edad:</label>
+        <input type="number" id="edad" name="edad">
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required>
+        <button type="submit">Crear Usuario</button>
+    </form>
+    <pre id="nuevoUsuario"></pre>
+
+    <h2>Actualizar usuario</h2>
+    <form id="updateUserForm">
+        <label for="updateUserId">ID del usuario:</label>
+        <input type="number" id="updateUserId" name="updateUserId" required>
+        <label for="updateNombre">Nombre:</label>
+        <input type="text" id="updateNombre" name="updateNombre">
+        <label for="updateEdad">Edad:</label>
+        <input type="number" id="updateEdad" name="updateEdad">
+        <label for="updateEmail">Email:</label>
+        <input type="email" id="updateEmail" name="updateEmail">
+        <button type="submit">Actualizar Usuario</button>
+    </form>
+    <pre id="usuarioActualizado"></pre>
+
+    <h2>Eliminar usuario</h2>
+    <form id="deleteUserForm">
+        <label for="deleteUserId">ID del usuario:</label>
+        <input type="number" id="deleteUserId" name="deleteUserId" required>
+        <button type="submit">Eliminar Usuario</button>
+    </form>
+    <pre id="usuarioEliminado"></pre>
+
+    <script>
+        async function getUsuarios() {
+            const response = await fetch('/usuarios');
+            const usuarios = await response.json();
+            document.getElementById('usuarios').textContent = JSON.stringify(usuarios, null, 4);
+        }
+
+        document.getElementById('getUserForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const userId = document.getElementById('userId').value;
+            const response = await fetch(`/usuarios/${userId}`);
+            const usuario = await response.json();
+            document.getElementById('usuario').textContent = JSON.stringify(usuario, null, 4);
+        });
+
+        document.getElementById('createUserForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const nombre = document.getElementById('nombre').value;
+            const edad = document.getElementById('edad').value;
+            const email = document.getElementById('email').value;
+            const response = await fetch('/usuarios', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ nombre, edad, email }),
+            });
+            const nuevoUsuario = await response.json();
+            document.getElementById('nuevoUsuario').textContent = JSON.stringify(nuevoUsuario, null, 4);
+        });
+
+        document.getElementById('updateUserForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const id = document.getElementById('updateUserId').value;
+            const nombre = document.getElementById('updateNombre').value;
+            const edad = document.getElementById('updateEdad').value;
+            const email = document.getElementById('updateEmail').value;
+            const response = await fetch(`/usuarios/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ nombre, edad, email }),
+            });
+            const usuarioActualizado = await response.json();
+            document.getElementById('usuarioActualizado').textContent = JSON.stringify(usuarioActualizado, null, 4);
+        });
+
+        document.getElementById('deleteUserForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const id = document.getElementById('deleteUserId').value;
+            const response = await fetch(`/usuarios/${id}`, {
+                method: 'DELETE',
+            });
+            const usuarioEliminado = await response.json();
+            document.getElementById('usuarioEliminado').textContent = JSON.stringify(usuarioEliminado, null, 4);
+        });
+    </script>
+</body>
+</html>
