@@ -1,175 +1,188 @@
-import json
 import os
 import sqlite3
-import shutil
 import tkinter as tk
-from tkinter import messagebox, simpledialog, scrolledtext
+from tkinter import messagebox, scrolledtext, ttk
 
-# Configura rutas
-json_file_path = 'data/usuarios.json'
-pin_file_path = 'protected/secret_pin.txt'
-db_file = 'mi_base_de_datos.db'
-initial_data_path = 'data/initial_data.json'
 
-# Asegúrate de que las carpetas y archivos necesarios existan
-def ensure_directories_and_files():
-    if not os.path.exists('data'):
-        os.makedirs('data')
-    if not os.path.exists('protected'):
-        os.makedirs('protected')
-
-    # Si el archivo JSON no existe, créalo con datos iniciales
-    if not os.path.exists(json_file_path):
-        if os.path.exists(initial_data_path):
-            shutil.copy(initial_data_path, json_file_path)
-        else:
-            with open(json_file_path, 'w', encoding='utf-8') as file:
-                json.dump([], file, ensure_ascii=False, indent=4)
-
-    # Si el archivo del PIN no existe, créalo (puedes poner un PIN predeterminado si lo deseas)
-    if not os.path.exists(pin_file_path):
-        with open(pin_file_path, 'w', encoding='utf-8') as file:
-            file.write('1234')  # Puedes cambiar '1234' por el PIN que prefieras
-
-# Funciones para manejar la base de datos
-def get_db_connection():
-    conn = sqlite3.connect(db_file)
-    conn.row_factory = sqlite3.Row
+# Función para conectar a la base de datos
+def connect_db():
+    conn = sqlite3.connect('data.db')
     return conn
 
-def initialize_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()  # Crear un cursor para ejecutar comandos SQL
+# Crear tablas si no existen
+def create_tables():
+    conn = connect_db()
+    cursor = conn.cursor()
 
-    # Crear la tabla si no existe
+    # Crear tabla 'codes'
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nombre TEXT NOT NULL,
-        edad INTEGER,
-        email TEXT UNIQUE
+    CREATE TABLE IF NOT EXISTS codes (
+        code INTEGER PRIMARY KEY,
+        threshold INTEGER
     )
     ''')
 
-    # Verificar si la tabla está vacía
-    cursor.execute('SELECT COUNT(*) FROM usuarios')
-    count = cursor.fetchone()[0]
+    # Crear tabla 'UMB'
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS UMB (
+        umb TEXT PRIMARY KEY
+    )
+    ''')
 
-    if count == 0:
-        # Insertar datos iniciales si la tabla está vacía
-        initial_data = [
-            {"nombre": "Juan Pérez", "edad": 30, "email": "juan.perez@example.com"},
-            {"nombre": "Ana Gómez", "edad": 25, "email": "ana.gomez@example.com"},
-        ]
-        for user in initial_data:
-            cursor.execute('''
-            INSERT INTO usuarios (nombre, edad, email) VALUES (?, ?, ?)
-            ''', (user['nombre'], user['edad'], user['email']))
-    
+    # Crear tabla 'umb_codes'
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS umb_codes (
+        umb TEXT,
+        code INTEGER,
+        FOREIGN KEY(umb) REFERENCES UMB(umb),
+        FOREIGN KEY(code) REFERENCES codes(code),
+        PRIMARY KEY(umb, code)
+    )
+    ''')
+
     conn.commit()
     conn.close()
 
-# Funciones para manejar el archivo JSON
-def load_data_from_json():
-    try:
-        with open(json_file_path, 'r', encoding='utf-8') as file:
-            return json.load(file)
-    except json.JSONDecodeError as e:
-        print(f"Error al leer el archivo JSON: {e}")
-        return []
-    except Exception as e:
-        print(f"Error inesperado: {e}")
-        return []
+# Función para cargar datos desde la base de datos
+def load_data():
+    conn = connect_db()
+    cursor = conn.cursor()
 
-def save_data_to_json(data):
-    try:
-        with open(json_file_path, 'w', encoding='utf-8') as file:
-            json.dump(data, file, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"Error al guardar el archivo JSON: {e}")
+    # Cargar códigos y umbrales
+    cursor.execute('SELECT * FROM codes')
+    codes = dict(cursor.fetchall())
 
-# Función para verificar el PIN
-def verify_pin(pin):
-    try:
-        with open(pin_file_path, 'r', encoding='utf-8') as file:
-            correct_pin = file.read().strip()
-        return pin == correct_pin
-    except Exception as e:
-        print(f"Error al verificar el PIN: {e}")
-        return False
+    # Cargar UMBs
+    cursor.execute('SELECT umb FROM UMB')
+    umbs = {row[0]: [] for row in cursor.fetchall()}
 
-# Crear la ventana principal
-class App:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Gestión de Usuarios")
+    # Cargar códigos asociados a UMBs
+    cursor.execute('SELECT umb, code FROM umb_codes')
+    for umb, code in cursor.fetchall():
+        if umb in umbs:
+            umbs[umb].append(code)
 
-        # Configurar interfaz
-        self.setup_ui()
+    conn.close()
+    return codes, umbs
 
-    def setup_ui(self):
-        self.frame = tk.Frame(self.root)
-        self.frame.pack(padx=10, pady=10)
+# Crear las tablas en la base de datos
+create_tables()
 
-        self.text_area = scrolledtext.ScrolledText(self.frame, width=50, height=20)
-        self.text_area.pack()
+# Leer los datos de la base de datos
+codes, UMB = load_data()
 
-        self.load_button = tk.Button(self.frame, text="Cargar Usuarios", command=self.load_users)
-        self.load_button.pack(pady=5)
+class Aplicacion(tk.Tk):
+    def __init__(self):
+        super().__init__()
 
-        self.save_button = tk.Button(self.frame, text="Guardar Usuario", command=self.save_user)
-        self.save_button.pack(pady=5)
+        self.title("Consulta de Códigos")
+        self.geometry("800x600")
 
-        self.delete_button = tk.Button(self.frame, text="Eliminar Usuario", command=self.delete_user)
-        self.delete_button.pack(pady=5)
+        # Entrada de código
+        self.label = tk.Label(self, text="Seleccione el código:")
+        self.label.pack(pady=10)
 
-        self.add_button = tk.Button(self.frame, text="Añadir Usuario", command=self.add_user)
-        self.add_button.pack(pady=5)
+        # Menú desplegable para seleccionar código
+        self.code_var = tk.StringVar()
+        self.code_var.set(next(iter(codes.keys()), ''))  # Establecer un valor predeterminado
 
-    def load_users(self):
-        usuarios = load_data_from_json()
-        self.text_area.delete(1.0, tk.END)
-        self.text_area.insert(tk.END, json.dumps(usuarios, indent=4))
+        self.code_dropdown = ttk.Combobox(self, textvariable=self.code_var, values=list(codes.keys()))
+        self.code_dropdown.pack(pady=10)
+        self.code_dropdown.bind("<<ComboboxSelected>>", self.show_info)
 
-    def save_user(self):
-        try:
-            usuarios = json.loads(self.text_area.get(1.0, tk.END))
-            save_data_to_json(usuarios)
-            messagebox.showinfo("Éxito", "Usuarios guardados correctamente.")
-        except json.JSONDecodeError as e:
-            messagebox.showerror("Error", f"Error al procesar JSON: {e}")
-        except Exception as e:
-            messagebox.showerror("Error", f"No se pudo guardar el usuario: {e}")
+        # Botón para agregar código
+        self.add_code_button = tk.Button(self, text="Agregar Código", command=self.add_code_window)
+        self.add_code_button.pack(pady=10)
 
-    def delete_user(self):
-        user_id = simpledialog.askinteger("Eliminar Usuario", "ID del usuario a eliminar:")
-        if user_id is not None:
-            usuarios = load_data_from_json()
-            usuarios = [u for u in usuarios if u['id'] != user_id]
-            save_data_to_json(usuarios)
-            self.load_users()
-            messagebox.showinfo("Éxito", "Usuario eliminado correctamente.")
+        # Área de texto para mostrar resultados
+        self.text_area = scrolledtext.ScrolledText(self, width=50, height=15)
+        self.text_area.pack(pady=10)
 
-    def add_user(self):
-        user_name = simpledialog.askstring("Añadir Usuario", "Nombre del usuario:")
-        user_age = simpledialog.askinteger("Añadir Usuario", "Edad del usuario:")
-        user_email = simpledialog.askstring("Añadir Usuario", "Email del usuario:")
-        if user_name and user_age and user_email:
-            usuarios = load_data_from_json()
-            new_user = {
-                "id": (usuarios[-1]['id'] + 1 if usuarios else 1),
-                "nombre": user_name,
-                "edad": user_age,
-                "email": user_email
-            }
-            usuarios.append(new_user)
-            save_data_to_json(usuarios)
-            self.load_users()
-            messagebox.showinfo("Éxito", "Usuario añadido correctamente.")
+    def show_info(self, event=None):
+        code = int(self.code_var.get())
+        if code in codes:
+            # Obtener el umbral
+            threshold = codes[code]
 
-if __name__ == '__main__':
-    ensure_directories_and_files()  # Asegúrate de que las carpetas y archivos existan
-    initialize_db()  # Asegúrate de que la base de datos esté inicializada
-    root = tk.Tk()
-    app = App(root)
-    root.mainloop()
+            # Buscar el UMB correspondiente
+            umb_prefix = None
+            for key, value in UMB.items():
+                if code in value:
+                    umb_prefix = key
+                    break
+
+            umb_info = f"UMB: {umb_prefix}" if umb_prefix else "Información UMB no encontrada."
+            
+            self.text_area.delete(1.0, tk.END)
+            self.text_area.insert(tk.END, f"Código {code} tiene un umbral de {threshold}\n")
+            self.text_area.insert(tk.END, f"Información UMB: {umb_info}\n")
+        else:
+            self.text_area.delete(1.0, tk.END)
+            self.text_area.insert(tk.END, f"Código {code} no encontrado\n")
+
+    def add_code_window(self):
+        self.add_window = tk.Toplevel(self)
+        self.add_window.title("Agregar Código")
+
+        self.add_code_label = tk.Label(self.add_window, text="Código:")
+        self.add_code_label.pack(pady=5)
+
+        self.add_code_entry = tk.Entry(self.add_window)
+        self.add_code_entry.pack(pady=5)
+
+        self.add_umb_label = tk.Label(self.add_window, text="UMB:")
+        self.add_umb_label.pack(pady=5)
+
+        # Crear el menú desplegable para UMB
+        self.add_umb_var = tk.StringVar()
+        self.add_umb_var.set(next(iter(UMB.keys()), ''))  # Establecer un valor predeterminado
+
+        self.umb_dropdown = ttk.Combobox(self.add_window, textvariable=self.add_umb_var, values=list(UMB.keys()))
+        self.umb_dropdown.pack(pady=5)
+
+        self.add_button = tk.Button(self.add_window, text="Agregar", command=self.add_code)
+        self.add_button.pack(pady=10)
+
+    def add_code(self):
+        code = self.add_code_entry.get()
+        umb = self.add_umb_var.get()
+
+        if code.isdigit() and len(code) > 0:
+            code = int(code)
+            threshold = codes.get(code, 10)  # Usar umbral predeterminado si no se encuentra
+
+            conn = connect_db()
+            cursor = conn.cursor()
+
+            # Insertar o actualizar el código
+            cursor.execute('INSERT OR REPLACE INTO codes (code, threshold) VALUES (?, ?)', (code, threshold))
+
+            # Insertar o actualizar el UMB
+            cursor.execute('INSERT OR IGNORE INTO UMB (umb) VALUES (?)', (umb,))
+
+            # Asociar el código con el UMB
+            cursor.execute('INSERT OR REPLACE INTO umb_codes (umb, code) VALUES (?, ?)', (umb, code))
+
+            conn.commit()
+            conn.close()
+
+            # Actualizar los datos en la interfaz
+            codes, UMB
+            codes[code] = threshold
+            if umb in UMB:
+                UMB[umb].append(code)
+            else:
+                UMB[umb] = [code]
+
+            # Actualizar el menú desplegable con los nuevos códigos
+            self.code_dropdown['values'] = list(codes.keys())
+            self.code_var.set(str(code))
+
+            self.text_area.insert(tk.END, f"Código {code} agregado con umbral {threshold} y UMB {umb}\n")
+            self.add_window.destroy()
+        else:
+            messagebox.showerror("Error", "Código inválido")
+
+if __name__ == "__main__":
+    app = Aplicacion()
+    app.mainloop()
